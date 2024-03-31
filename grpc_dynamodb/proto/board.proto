@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package board;
+
+service BoardService {
+    rpc ReadArticle (ReadArticleRequest) returns (ReadArticleResponse) {};
+    rpc WriteArticle (WriteArticleRequest) returns (WriteArticleResponse) {};
+}
+
+message ReadArticleRequest {
+    uint64 id = 1;
+}
+
+message ReadArticleResponse {
+    uint64 id = 1;
+    string title = 2;
+}
+
+message WriteArticleRequest {
+    string title = 1;
+}
+
+message WriteArticleResponse {
+    uint64 id = 1;
+}

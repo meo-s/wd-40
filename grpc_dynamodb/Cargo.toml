@@ -1,0 +1,27 @@
+[package]
+name = "grpc_dynamodb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+paste = "1.0.14"
+prost = "0.12.3"
+tokio = { version = "1.37.0 ", features = ["full"] }
+tonic = "0.11.0"
+quote = "1.0.35"
+syn = "2.0.55"
+proc-macro2 = "1.0.79"
+aws-config = "1.1.9"
+aws-sdk-dynamodb = "1.20.0"
+aws-smithy-types = "1.1.8"
+anyhow = "1.0.81"
+thiserror = "1.0.58"
+aws-smithy-runtime-api = "1.2.0"
+ulid = "1.1.2"
+
+[build-dependencies]
+tonic-build = { version = "0.11.0", features = ["prost"] }
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
