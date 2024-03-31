@@ -18,6 +18,7 @@ anyhow = "1.0.81"
 thiserror = "1.0.58"
 aws-smithy-runtime-api = "1.2.0"
 ulid = "1.1.2"
+async-trait = "0.1.79"
 
 [build-dependencies]
 tonic-build = { version = "0.11.0", features = ["prost"] }

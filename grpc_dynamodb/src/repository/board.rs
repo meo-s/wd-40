@@ -1,12 +1,15 @@
 use crate::error::Error;
 
-pub trait Repo<'c> {
-    async fn save(&'c self) -> Result<(), Error>;
+#[async_trait::async_trait]
+pub trait Repo {
+    async fn save(&self) -> Result<(), Error>;
 }
 
 pub mod dynamodb {
+    use std::sync::Arc;
+
     use crate::{
-        datasource::{self, dynamodb::Connector, Connector as GenericConnector},
+        datasource::{self, Connector},
         error::Error,
     };
     use aws_sdk_dynamodb::{
@@ -18,27 +21,46 @@ pub mod dynamodb {
     const BOARD_TABLE_NAME: &str = "article";
     const BOARD_TABLE_KEY_NAME: &str = "id";
 
-    struct RepoImpl<'c> {
-        connector: &'c Connector,
+    pub struct RepoImpl {
+        connector: Arc<dyn Connector<aws_sdk_dynamodb::Client>>,
     }
 
-    impl<'c> RepoImpl<'c> {
-        async fn new(connector: &'c Connector) -> Result<RepoImpl<'c>, Error> {
-            if let Err(Error::AwsSdkError(e)) =
+    #[async_trait::async_trait]
+    impl super::Repo for RepoImpl {
+        async fn save(&self) -> Result<(), crate::error::Error> {
+            let stmt = format!(
+                r#"
+                INSERT INTO {} VALUE {{
+                    '{}': ?
+                }}"#,
+                BOARD_TABLE_NAME, BOARD_TABLE_KEY_NAME
+            );
+
+            let article_id = ulid::Ulid::new();
+
+            let conn = self.connector.get_conn();
+            match conn
+                .execute_statement()
+                .statement(stmt)
+                .set_parameters(vec![AttributeValue::B(Blob::new(article_id.to_bytes()))].into())
+                .send()
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(Error::AwsSdkError(e.into())),
+            }
+        }
+    }
+
+    impl RepoImpl {
+        async fn new(
+            connector: &Arc<dyn Connector<aws_sdk_dynamodb::Client>>,
+        ) -> Result<impl super::Repo, Error> {
+            if let Err(e) =
                 datasource::dynamodb::delete_table(connector.get_conn(), BOARD_TABLE_NAME).await
             {
-                let unexpected = {
-                    let e = e
-                        .downcast_ref::<SdkError<DeleteTableError, Response>>()
-                        .unwrap();
-                    if let Some(e) = e.as_service_error() {
-                        !e.is_resource_not_found_exception()
-                    } else {
-                        true
-                    }
-                };
-                if unexpected {
-                    return Err(Error::AwsSdkError(e));
+                if is_resource_not_found_exception(&e) {
+                    return Err(e);
                 }
             }
 
@@ -49,36 +71,31 @@ pub mod dynamodb {
             )
             .await?;
 
-            Ok(RepoImpl { connector })
+            Ok(RepoImpl {
+                connector: Arc::clone(connector),
+            })
         }
     }
 
-    impl<'c> super::Repo<'c> for RepoImpl<'c> {
-        async fn save(&'c self) -> Result<(), crate::error::Error> {
-            let conn = self.connector.get_conn();
-            let stmt = format!(r#"INSERT INTO {} VALUES {{ "id": ? }}"#, BOARD_TABLE_NAME);
-
-            let article_id = ulid::Ulid::new();
-            match conn
-                .execute_statement()
-                .statement(stmt)
-                .set_parameters(vec![AttributeValue::B(Blob::new(article_id.to_bytes()))].into())
-                .send()
-                .await
-            {
-                Ok(_) => {
-                    println!("{} saved !!", article_id.to_string());
-                    Ok(())
-                }
-                Err(e) => {
-                    println!("failed to save");
-                    Err(Error::AwsSdkError(e.into()))
-                }
+    fn is_resource_not_found_exception(e: &Error) -> bool {
+        #[allow(irrefutable_let_patterns)]
+        if let Error::AwsSdkError(e) = e {
+            let e = e
+                .downcast_ref::<SdkError<DeleteTableError, Response>>()
+                .unwrap();
+            if let Some(e) = e.as_service_error() {
+                !e.is_resource_not_found_exception()
+            } else {
+                true
             }
+        } else {
+            false
         }
     }
 
-    pub async fn new<'c>(connector: &'c Connector) -> Result<impl super::Repo<'c>, Error> {
+    pub async fn new(
+        connector: &Arc<dyn Connector<aws_sdk_dynamodb::Client>>,
+    ) -> Result<impl super::Repo, Error> {
         RepoImpl::new(connector).await
     }
 }
